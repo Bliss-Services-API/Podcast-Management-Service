@@ -1,0 +1,25 @@
+{
+  "development": {
+    "username": "Sarthak",
+    "password": "Sarthak111@",
+    "database": "podcasts",
+    "host": "127.0.0.1",
+    "dialect": "postgres"
+  },
+  "production": {
+    "username": "hhnyxlpjbfczdf",
+    "password": "9a559f41e8073595cdceec2b8a3676959ab157f28f22bce54a041715d35f5ac8",
+    "database": "d1mar1t5503nq9",
+    "host": "ec2-54-90-68-208.compute-1.amazonaws.com",
+    "port": "5432",
+    "dialect": "postgres"
+  },
+  "test": {
+    "username": "Sarthak",
+    "password": "Sarthak111@",
+    "database": null,
+    "host": "127.0.0.1",
+    "port": "5432",
+    "dialect": "postgres"
+  }
+}

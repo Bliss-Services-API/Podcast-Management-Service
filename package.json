@@ -1,0 +1,32 @@
+{
+  "name": "podcast-management-service",
+  "version": "1.0.0",
+  "description": "Podcast Management Service",
+  "main": "podcast.js",
+  "scripts": {
+    "start": "node podcast.js --env production",
+    "migrate": "sequelize db:migrate --env production",
+    "unmigrate": "sequelize db:migrate:undo:all --env production",
+    "dev-start": "nodemon podcast.js --env development",
+    "dev-migrate": "sequelize db:migrate --env development",
+    "dev-unmigrate": "sequelize db:migrate:undo:all --env development",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Sarthak Joshi",
+  "license": "ISC",
+  "dependencies": {
+    "@google-cloud/pubsub": "^2.6.0",
+    "body-parser": "^1.19.0",
+    "express": "^4.17.1",
+    "firebase-admin": "^9.3.0",
+    "morgan": "^1.10.0",
+    "pg": "^8.4.1",
+    "pg-hstore": "^2.3.3",
+    "sequelize": "^6.3.5",
+    "sequelize-cli": "^6.2.0"
+  },
+  "devDependencies": {
+    "dotenv": "^8.2.0",
+    "nodemon": "^2.0.6"
+  }
+}

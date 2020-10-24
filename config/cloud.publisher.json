@@ -1,0 +1,12 @@
+{
+  "type": "service_account",
+  "project_id": "twilight-cloud",
+  "private_key_id": "bbc4da3c9455efd8cd56910e2e83640f10aea776",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQCyILq5KbQw009a\nmdGGfC20BEDVule7pns6wLkv8wyI+ZJvUlnK0O0N/ZSELYQ40mTmJCGeSKDIgk5w\n23tINUpovskPSkjX9Y2m7DfWSXwBf6IRSXv9R8BoT85XY1tCSAvIXIQ+MCkPaK/A\naEDspjROOytygX3kJid9kR+uaA2coTr7qFPcQdqQ5YxPYSk81/4xA7hQ1JPfYnwy\nJYjIQ5HzX+lJOnV4X5kSBCa03n6zTPWQZ0rHXq67MAY9yFJ4i0K5agv/GQFbQVkD\nE1AHYSTE76oPf19lrkJJvcedbKNKUXz1gY4BKwPolLPUJxzxn/3IQXfTY9NbBVaj\ntGTHsEObAgMBAAECggEAEFo4ChH6b5XWh4C7eKPwJiiFzMxW8lK6pigiWA6Kxg0m\nexjz37SfLohq/yXJwtWkKArrf/ZqHD4qKVFc1472dJGfL5iOm2GSTkXW0mtCLd9w\ngQArMizi5jCW+fRhelijpd8oaY60r99ybJcL7sdLSF54nJunc2LO5hSE9HCrXzq4\nVCIQmjcgEBTsROkjrPh5QTjlBVda3uoYsxLLurYO0IihOFyk9/27dVmTIHZbkpZW\nXg1j4dijclP3+Z1Ggjsute03nZXeWmyyTLtcwIhi4BVDNpz2y1FgcWaEe6ZxuU52\nrUkKXtFhIhNeR72R6L3EO7zJMJR4StOBm4bXORgrEQKBgQDWq9ZdP+aQ355HCLxq\nG506n+Pkmg0ibPyJU5KqZWRak0UhrrivHHePEqGdUNibvVuiG3/SujZLhV/Ayv8a\n7PXFYYmsuHe1MIMvQ+I2Jb/sxfB8dPdpAEQi90wB3IhX6XmDdY6p9D8vvYctH9m7\neYECOB++NZTzaTwsnuilep2cNwKBgQDUa9XqLJRyWnNjj9abke47VWTvexcoD8Jm\ny3+ixMOLcl+0aec1l7gq9B/qpGpFF7tDcO6I/CHqeq9XZ8WWIVLDvhGHYBAm/+Af\nGXskx1pwq5M/0gsTrQLR+8VhYOjmRbBEbuO9ku5ztEPShBLUTtOx9HkilvJKZsG9\n7k9q0NoJvQKBgDbynxkZTSQSCQp3ovqp/NHPsV6HTAteyDlCag0xjMFeZtibR2yT\nJcs6YqHI2tjqXDUfQtWmklU8W2kWzLuQocwXDk1mnkWDmGCVyKZBfWHWvJquudFn\nnwkwMYVcdI3EFjVe9thry2yl357eQzYogKwXv5BJWMoBSsTFHBmXTBZ7AoGBALGw\nJreFZQOnH+DHwGhQEOz3CMC+wWcUj7R3Q6Q/Xad3HBGJiQuuhzL/FPetYuu65z2J\n6S8TYbeHusatmn10EIyGoJkSRVCqN6ssIHNqgv++tiTrqbJixfoq1jgX3ZpJ7yG/\ndKfukaKdxyIAstN/wNuaOf4yMCkGfchH4YzjeZAtAoGAWSliAUf1C8eNztB9ByXw\nEuR0CszT6GMwl0kmAQ1G8Co2Ls2L3H0qqXg9EHxwVBZniT4ufJy7+SzhxQ7hCiXw\n/JGyI1ReVyitO+pBrMKewX4VbeWcAD7qdlSyYDVA6UjZKyFih5WXEmtfE/+zL9NE\nwhpn+EjSqoU8Y9EJTMrIAJA=\n-----END PRIVATE KEY-----\n",
+  "client_email": "twilight-podcast-publisher@twilight-cloud.iam.gserviceaccount.com",
+  "client_id": "108272172167934807408",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/twilight-podcast-publisher%40twilight-cloud.iam.gserviceaccount.com"
+}
