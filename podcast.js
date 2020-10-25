@@ -1,8 +1,7 @@
 'use strict';
 
-require('dotenv').config();
+// require('dotenv').config();
 
-// const DBConnection = require('./connections/PGConnection');
 const bodyParser = require('body-parser');
 const express = require('express');
 const PodcastRoutesAPI = require('./routes/routes');
