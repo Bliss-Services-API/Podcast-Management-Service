@@ -1,146 +1,175 @@
 'use strict';
 
-const Model = require('../models');
-const crypto = require('crypto');
-const { PubSub } = require('@google-cloud/pubsub');
-const PubSubConfig = require('../config/cloud.publisher.json');
-const pubSubClient = new PubSub({ credentials: PubSubConfig });
 
-module.exports = (pgConnection, firebaseBucket) => {
-    const PodcastEpisodesModel = Model(pgConnection).PodcastEpisodesModel;
-    const PodcastIndexModel = Model(pgConnection).PodcastIndexModel;
-    const TopicName = 'projects/twilight-cloud/topics/PODCAST_UPDATE';
+/**
+ * 
+ * Controller for handling Podcast Episode's Management routes in the Bliss App.
+ * 
+ * @param {Sequelize} databaseConnection Sequelize Database Connection Object
+ * @param {Firebase} firebaseBucket Firebase Bucket Reference Object
+ *
+ */
+module.exports = (databaseConnection, firebaseBucket) => {
+    const Model = require('../models')(databaseConnection);
+    const crypto = require('crypto');
+    const { PubSub } = require('@google-cloud/pubsub');
+    const PubSubConfig = require('../config/cloud.publisher.json');
+    const pubSubClient = new PubSub({ credentials: PubSubConfig });
+    const podcastEpisodesModel = Model.podcastEpisodesModel;
+    const podcastIndexModel = Model.podcastIndexModel;
+    const podcastEpisodeStatsModel = Model.podcastEpisodeStatsModel;
+    const topicName = 'projects/twilight-cloud/topics/PODCAST_EPISODE_CREATE_CALLBACK';
 
     
-    const sendPubSubNotification = async (podcastId, TopicName) => {
+    /**
+     * 
+     * Send Notification to PubSub Server about the Episode Created, which will further process
+     * the video, and handle the notification service
+     * 
+     * @param {String} podcastTitle Podcast Title, in which the episode is to be created
+     * @param {String} episodeTitle Episode Title
+     * 
+     */
+    const sendPubSubNotification = async (podcastTitle, episodeNumber, episodeTitle) => {
         const updateNotification = {
-            PODCAST_ID: podcastId,
-            MESSAGE: `PODCAST_CREATED`
+            PODCAST_TITLE: podcastTitle,
+            EPISODE_NUMBER: episodeNumber,
+            EPISODE_TITLE: episodeTitle
         };
 
         const attributes = {
             origin: crypto
                     .createHash('sha512')
-                    .update('Twilight Podcast Management Service')
+                    .update('Bliss LLC.')
                     .digest('hex')
         }
 
         const PubSubUpdateDataBuffer = Buffer.from(JSON.stringify(updateNotification));
-        const messageId = await pubSubClient.topic(TopicName).publish(PubSubUpdateDataBuffer, attributes);
+        const messageId = await pubSubClient.topic(topicName).publish(PubSubUpdateDataBuffer, attributes);
         return messageId;
     }
 
-    const getEpisodeUploadSignedURL = async (podcastTitle, episodeNumber, videoFileName, videoType) => {
-        const podcastId = crypto.createHash('sha256').update(podcastTitle).digest('hex');
-        const videoFile = firebaseBucket.file(`podcasts/${podcastId}/episodes/${episodeNumber}:${videoFileName}.${videoType}`);
+    /**
+     * 
+     * Get Episode Video Uploading Cloud Storage Bucket SignedURL
+     * 
+     * @param {String} podcastTitle Podcast Title, in which the episode is to be created
+     * @param {String} episodeNumber Episode Number
+     * @param {String} videoFileName File name of the Podcast Episode
+     * 
+     */
+    const getEpisodeUploadSignedURL = async (podcastTitle, episodeNumber, episodeTitle) => {
+        const videoFile = firebaseBucket.file(`podcasts/${podcastTitle}/episodes/input/${episodeNumber}-${episodeTitle}.avi`);
 
         const signUrlOptions = {
             version: 'v4',
             action: 'write',
-            expires: Date.now() + 120000,
-            contentType: `image/${videoType}`
+            expires: Date.now() + 240000,
+            contentType: `video/x-msvideo`
         };
 
-        try {
+        const podcastExists = await podcastIndexModel.findAll({where: {podcast_title: podcastTitle}});
+        if(podcastExists.length !== 0) {
             const fileExists = await videoFile.exists();
             if(fileExists[0]) {
-                return `Video Already Exists.`;
+                throw new Error(`Video Already Exists.`);
             };
 
-            return videoFile
-                .getSignedUrl(signUrlOptions)
-                .then((urlResponse) => { return urlResponse[0] })
-                .catch((err) => { return err });
-        }
-        catch(err) {
-            console.error(`Error Generating SignedURL! Try Again: ${err}`)
-            return (`Error Generating SignedURL! ${err}`)
+            const urlCloudStorageResponse = await videoFile.getSignedUrl(signUrlOptions);
+            return urlCloudStorageResponse[0];
+        } else {
+            throw new Error(`Podcast Doens't Exists Yet! Create Podcast First`);
         }
     }
 
-    const uploadNewEpisode = async (podcastTitle, episodeTitle, episodeNumber, episodeDescription, videoFileName, videoType) => {
+    /**
+     * 
+     * Upload New Episode of a Podcast, in the podcasts Database
+     * 
+     * @param {String} podcastTitle Podcast Title, in which the episode is to be created
+     * @param {String} episodeTitle Episode Title
+     * @param {String} episodeNumber Episode Number
+     * @param {String} episodeDescription Short Description of Episode
+     * 
+     */
+    const uploadNewEpisode = async (podcastTitle, episodeTitle, episodeNumber, episodeDescription) => {
         const EpisodeMetaData = {}
-        
-        EpisodeMetaData['podcast_id'] = crypto.createHash('sha256').update(podcastTitle).digest('hex');
+
+        EpisodeMetaData['podcast_title'] = podcastTitle;
         EpisodeMetaData['episode_number'] = episodeNumber;
         EpisodeMetaData['episode_title'] = episodeTitle;
         EpisodeMetaData['episode_description'] = episodeDescription;
         EpisodeMetaData['episode_upload_date'] = Date.now();
-        EpisodeMetaData['episode_video_link'] = `podcasts/${EpisodeMetaData['podcast_id']}/episodes/${episodeNumber}:${videoFileName}.${videoType}`;
+        EpisodeMetaData['episode_video_link'] = `podcasts/${podcastTitle}/episodes/input/${episodeNumber}-${episodeTitle}.avi`;
     
-        try {
-            const BucketResponse = await firebaseBucket.file(EpisodeMetaData['episode_video_link']).exists();
+        const BucketResponse = await firebaseBucket.file(EpisodeMetaData['episode_video_link']).exists();
 
-            if(BucketResponse[0]) {
-                const DBResponse = await PodcastEpisodesModel.create(EpisodeMetaData)
-                if(DBResponse){
-                    console.log(`Episode Recorded Successfully!`);
-                    
-                    try {
-                        const pubSubAck = sendPubSubNotification(EpisodeMetaData['podcast_id'], TopicName);
-                        console.log(`Message ${pubSubAck} published.`);
-                        return `Episode Created Successfully!`;
-                    }
-                    catch(err) {
-                        return `Error: ${err}`
-                    }
-
-                } else {
-                    console.log(`Episode couldn't be created! Try Again.`);
-                    return `Episode couldn't be created! Try Again.`;
-                }
+        if(BucketResponse[0]) {
+            const DBResponse = await podcastEpisodesModel.create(EpisodeMetaData)
+            if(DBResponse){                    
+                return sendPubSubNotification(podcastTitle, episodeTitle);
             }
-            else {
-                console.log(`Video Hasn't Been Uploaded Yet. Please Upload Video Before Creating Record`);
-                return `Video Hasn't Been Uploaded Yet. Please Upload Video Before Creating Record`;
-            }
-        }
-        catch(err) {
-            console.error(`Error Creating Episode! ${err}`);
-            return `Error Creating Episode! ${err}`;
+        } else {
+            throw new Error(`Video Hasn't Been Uploaded Yet. Please Upload Video Before Creating Record`);
         }
     };
     
-    const deleteEpisode = async (podcastTitle, episodeNumber, episodeTitle, videoFileName, videoType) => {
-        const podcastId = crypto.createHash('sha256').update(podcastTitle).digest('hex');
-        const episodeVideoLink = firebaseBucket.file(`podcasts/${podcastId}/episodes/${episodeNumber}:${videoFileName}.${videoType}`);
+    /**
+     * 
+     * Delete Episode of a Podcast
+     * 
+     * @param {String} podcastTitle Podcast Title, whose episode is to be deleted.
+     * @param {String} episodeNumber Episode Number of the podcast
+     * @param {String} episodeTitle Episode Title
+     */
+    const deleteEpisode = async (podcastTitle, episodeNumber, episodeTitle) => {
+        const episodeVideoLink = firebaseBucket.file(`podcasts/${podcastTitle}/episodes/input/${episodeNumber}-${episodeTitle}.avi`);
 
-        try {
-            await episodeVideoLink.delete();
-            console.log('Video Deleted');
+        await episodeVideoLink.delete();
+        await podcastEpisodesModel.destroy({
+            where: {
+                podcast_name: podcastName,
+                episode_number: episodeNumber,
+                episode_title: episodeTitle
+            }
+        });
 
-            await PodcastEpisodesModel.destroy({
-                where: {
-                    podcast_id: podcastId,
-                    episode_number: episodeNumber,
-                    episode_title: episodeTitle
-                }
-            });
-
-            console.log(`Record Deleted`);
-            return `DB Record and Video Deleted`;
-        }
-        catch(err) {
-            console.error(`Error Deleting Record and Video: ${err}`);
-            return `Error Deleting Record and Video: ${err}`;
-        }
+        return episodeTitle;
     };
     
-    
+    /**
+     * 
+     * Get List of All Episodes in a Podcast
+     * 
+     * @param {String} podcastTitle Podcast Title, whose episode is to be deleted.
+     * 
+     */
     const getEpisodesOfPodcast = async (podcastTitle) => {
-        try {
-            const response = await PodcastIndexModel.findAll(
-                { attributes: ['podcast_id']},
-                { where: { podcast_title: podcastTitle }
-            })
-            const podcastId = response[0]['dataValues']['podcast_id'];
-            return await PodcastEpisodesModel.findAll({where: {podcast_id : podcastId}});
-        }
-        catch(err) {
-            console.error(`Error Fetching Episodes: ${err}`);
-            return `Error Fetching Episodes: ${JSON.stringify(err)}`;
-        };
+        const response = await podcastEpisodesModel.findAll({
+            where: {podcast_title : podcastTitle},
+            includes: {model: [podcastEpisodeStatsModel]}
+        });
+        return response;
     }
 
-    return { uploadNewEpisode, deleteEpisode, getEpisodesOfPodcast, getEpisodeUploadSignedURL };
+    /**
+     * 
+     * Fetch Stats of an Episode in a Podcast
+     * 
+     * @param {String} podcastTitle Podcast Title, whose episode is to be deleted.
+     * @param {String} episodeNumber Episode Number of the podcast
+     * @param {String} episodeTitle Episode Title
+     * 
+     */
+    const getStatsOfEpisode = async (podcastTitle, episodeNumber, episodeTitle) => {
+        return await podcastEpisodeStatsModel.findAll({
+            where: {
+                podcast_title: podcastTitle, 
+                episode_number: episodeNumber, 
+                episode_title: episodeTitle
+            }
+        });
+    }
+
+    return { uploadNewEpisode, deleteEpisode, getEpisodesOfPodcast, getEpisodeUploadSignedURL, getStatsOfEpisode };
 }

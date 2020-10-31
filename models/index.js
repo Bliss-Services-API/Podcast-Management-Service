@@ -1,12 +1,25 @@
-module.exports = (pgConnection) => {
-    const PodcastIndexModel = require('./PodcastIndexModel')(pgConnection);
-    const PodcastEpisodesModel = require('./PodcastEpisodesModel')(pgConnection);
+'use strict';
 
-    PodcastEpisodesModel.belongsTo(PodcastIndexModel, {foreignKey: 'podcast_id'});
-    PodcastIndexModel.hasOne(PodcastEpisodesModel, {foreignKey: 'podcast_id'});
+/**
+ * 
+ * Returns all the Models in the Server
+ * 
+ * @param {Sequelize} databaseConnection Sequelize Database Connection Object
+ */
+module.exports = (databaseConnection) => {
+    const podcastIndexModel = require('./PodcastIndexModel')(databaseConnection);
+    const podcastEpisodesModel = require('./PodcastEpisodesModel')(databaseConnection);
+    const podcastEpisodeStatsModel = require('./PodcastEpisodeStatsModel')(databaseConnection);
+
+    podcastEpisodeStatsModel.belongsTo(podcastIndexModel, {foreignKey: 'podcast_title'});
+    podcastEpisodesModel.belongsTo(podcastIndexModel, {foreignKey: 'podcast_title'});
+    
+    podcastIndexModel.hasOne(podcastEpisodesModel, {foreignKey: 'podcast_title'});
+    podcastIndexModel.hasOne(podcastEpisodeStatsModel, {foreignKey: 'podcast_title'});
 
     return {
-        PodcastIndexModel,
-        PodcastEpisodesModel
+        podcastIndexModel,
+        podcastEpisodesModel,
+        podcastEpisodeStatsModel
     };
 };

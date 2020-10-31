@@ -1,18 +1,16 @@
 'use strict';
 
-const Sequelize = require('sequelize');
-
-module.exports = (DBConnection) => {
-    const PodcastEpisodesStatModel = DBConnection.define('podcast_episode_stat', {
-
-         /**
-         *  In http req body json, provide following values:
-         *  ->  podcast_title
-         *  ->  episode_number
-         *  ->  episode_title
-         */
-
-        podcast_id:                  { type: Sequelize.STRING(64), allowNull: false, primaryKey: true },
+/**
+ * 
+ * Model of the podcast_episodes_stats table in the podcasts database
+ * 
+ * @param {Sequelize} databaseConnection Sequelize Database Connection Object
+ * 
+ */
+module.exports = (databaseConnection) => {
+    const Sequelize = require('sequelize');
+    return databaseConnection.define('podcast_episode_stat', {
+        podcast_title:               { type: Sequelize.STRING, allowNull: false, primaryKey: true },
         episode_number:              { type: Sequelize.BIGINT, allowNull: false, primaryKey: true },
         episode_title:               { type: Sequelize.STRING, allowNull: false, primaryKey: true },
         episode_likes:               { type: Sequelize.BIGINT, allowNull: false, defaultValue: '0' },
@@ -20,5 +18,4 @@ module.exports = (DBConnection) => {
     }, {
         timestamps: false,
     });
-    return PodcastEpisodesStatModel;
 };

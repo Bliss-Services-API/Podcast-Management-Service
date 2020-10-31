@@ -1,9 +1,17 @@
 'use strict';
 
-const Sequelize = require('sequelize');
-const config = require('../config/config.json');
 
+/**
+ * 
+ * Get the Sequelize Database Connection object, based on the env of the server running
+ * 
+ * @param {String} mode NODE_ENV env variable, representing the env of the server running. Values could be
+ * either 'development' or 'production'
+ */
 module.exports = (mode) => {
+    const Sequelize = require('sequelize');
+    const config = require('../config/config.json');
+    
     if(mode == 'development')
         return new Sequelize(config.development.database, config.development.username, config.development.password, {
             host: config.development.host,
