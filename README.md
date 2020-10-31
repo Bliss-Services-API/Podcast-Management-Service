@@ -7,5 +7,5 @@ NodeJS Service for managing podcast and episodes in the Bliss app.
 Postman Documentation of all routes accessible throught the service.
 
 ```
-https://documenter.getpostman.com/view/5725857/TVRj5oR9#96379855-d695-4cf6-a7ab-46b79f6ec30c
+https://documenter.getpostman.com/view/5725857/TVRj5oR9#9d631cfa-d5be-45b8-9850-52a213752336
 ```
