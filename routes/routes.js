@@ -249,7 +249,7 @@ module.exports = (databaseConnection, firebaseBucket) => {
      * episode_number
      * 
      */
-    router.get('/episode/stats', (req, res) => {
+    router.get('/episode/stats', async (req, res) => {
         const podcastTitle = req.query.podcast_title;
         const episodeTitle = req.query.episode_title;
         const episodeNumber = req.query.episode_number;
