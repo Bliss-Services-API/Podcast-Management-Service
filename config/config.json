@@ -1,17 +1,17 @@
 {
   "development": {
     "username": "Sarthak",
-    "password": "Sarthak111@",
+    "password": "Sarthak111",
     "database": "podcasts",
-    "host": "127.0.0.1",
+    "host": "podcasts.cau4kmidmwkk.us-east-2.rds.amazonaws.com",
+    "port": "5432",
     "dialect": "postgres"
   },
   "production": {
-    "username": "voqyechnjauyey",
-    "password": "20bd51efe5794883d2ed9cd6e06d744d5b00cf7c81f7ec80ade96d31710bc336",
-    "database": "dibdap4skr0ed",
-    "host": "ec2-54-158-222-248.compute-1.amazonaws.com",
-    "port": "5432",
+    "username": "Sarthak",
+    "password": "Sarthak111@",
+    "database": "podcasts",
+    "host": "127.0.0.1",
     "dialect": "postgres"
   },
   "test": {

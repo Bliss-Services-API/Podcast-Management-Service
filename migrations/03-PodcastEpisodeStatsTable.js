@@ -7,7 +7,7 @@
  */
 module.exports = {
     up: (queryInterface, Sequelize) => {
-        return queryInterface.createTable('podcast_episodes_stats', {
+        return queryInterface.createTable('podcast_episode_stats', {
             podcast_title:                  { type: Sequelize.STRING, allowNull: false, primaryKey: true, references: {
                                                 model: 'podcast_indices',
                                                 key: 'podcast_title',
@@ -21,6 +21,6 @@ module.exports = {
     },
 
     down: (queryInterface, Sequelize) => {
-        return queryInterface.dropTable('podcast_episodes_stats');
+        return queryInterface.dropTable('podcast_episode_stats');
     }
 };

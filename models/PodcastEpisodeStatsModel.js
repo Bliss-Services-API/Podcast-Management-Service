@@ -13,8 +13,9 @@ module.exports = (databaseConnection) => {
         podcast_title:               { type: Sequelize.STRING, allowNull: false, primaryKey: true },
         episode_number:              { type: Sequelize.BIGINT, allowNull: false, primaryKey: true },
         episode_title:               { type: Sequelize.STRING, allowNull: false, primaryKey: true },
-        episode_likes:               { type: Sequelize.BIGINT, allowNull: false, defaultValue: '0' },
-        episode_play_count:          { type: Sequelize.BIGINT, allowNull: false, defaultValue: '0' }
+        episode_length:              { type: Sequelize.BIGINT, allowNull: false },
+        episode_likes:               { type: Sequelize.BIGINT, allowNull: false },
+        episode_play_count:          { type: Sequelize.BIGINT, allowNull: false }
     }, {
         timestamps: false,
     });

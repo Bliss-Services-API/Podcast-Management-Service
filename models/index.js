@@ -4,12 +4,13 @@
  * 
  * Returns all the Models in the Server
  * 
- * @param {Sequelize} databaseConnection Sequelize Database Connection Object
+ * @param {Sequelize} postgresClient Sequelize Database Connection Object
  */
-module.exports = (databaseConnection) => {
-    const podcastIndexModel = require('./PodcastIndexModel')(databaseConnection);
-    const podcastEpisodesModel = require('./PodcastEpisodesModel')(databaseConnection);
-    const podcastEpisodeStatsModel = require('./PodcastEpisodeStatsModel')(databaseConnection);
+module.exports = (postgresClient) => {
+    const podcastIndexModel = require('./PodcastIndexModel')(postgresClient);
+    const podcastEpisodesModel = require('./PodcastEpisodesModel')(postgresClient);
+    const podcastEpisodeStatsModel = require('./PodcastEpisodeStatsModel')(postgresClient);
+    const clientCredentialModel = require('./ClientCredentialModel')(postgresClient);
 
     podcastEpisodeStatsModel.belongsTo(podcastIndexModel, {foreignKey: 'podcast_title'});
     podcastEpisodesModel.belongsTo(podcastIndexModel, {foreignKey: 'podcast_title'});
@@ -20,6 +21,7 @@ module.exports = (databaseConnection) => {
     return {
         podcastIndexModel,
         podcastEpisodesModel,
+        clientCredentialModel,
         podcastEpisodeStatsModel
     };
 };

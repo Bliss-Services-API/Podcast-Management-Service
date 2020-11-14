@@ -13,15 +13,15 @@
  */
 require('dotenv').config();
 
-const bodyParser = require('body-parser');
+const AWS = require('aws-sdk');
+const morgan = require('morgan');
 const express = require('express');
-const podcastRoutes = require('./routes/routes');
-const firebaseAdmin = require('firebase-admin');
-const firebaseServiceKey = require('./config/firebase.json');
-// const morgan = require('morgan');
 const chalk = require('./chalk.console');
+const bodyParser = require('body-parser');
+const podcastRoutes = require('./routes/routes');
+const postgresConnection = require('./connections/PostgresConnection');
 
-const PORT = process.env.PORT || 7001;
+const PORT = process.env.PORT || 5000;
 const ENV = process.env.NODE_ENV;
 
 if(ENV === 'development') {
@@ -33,24 +33,30 @@ if(ENV === 'development') {
     process.exit(1);
 }
 
-const databaseConnection = require('./connections/PGConnection')(ENV);
+const postgresClient = postgresConnection(ENV);
 const app = express();
 
-firebaseAdmin.initializeApp({
-    credential: firebaseAdmin.credential.cert(firebaseServiceKey),
-    storageBucket: "twilight-cloud.appspot.com"
-})
+AWS.config.getCredentials((err) => {
+    if(err) {
+        console.error(chalk.error(`CREDENTIALS NOT LOADED`));
+        process.exit(1);
+    }
+    else console.log(chalk.info(`##### AWS ACCESS KEY IS VALID #####`));
+});
 
-const firebaseBucket = firebaseAdmin.storage().bucket();
+AWS.config.update({region: 'us-east-2'});
+const S3Client = new AWS.S3({apiVersion: '2006-03-01'});
+const SNSClient = new AWS.SNS({apiVersion: '2010-03-31'});
 
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({extended:false}));
-// app.use(morgan('dev'));
+app.use(morgan('dev'));
 
-databaseConnection
+postgresClient
     .authenticate()
     .then(() => console.info(`Database Connection Established Successfully!`))
-    .then(() => app.use('/podcast', podcastRoutes(databaseConnection, firebaseBucket)))
+    .then(() => app.use('/admin', podcastRoutes(postgresClient, S3Client, SNSClient)))
+    .then(() => app.get('/ping', (req, res) => res.send('OK')))
     .then(() => console.info(`Routes Established Successfully!`))
     .catch((err) => console.error(`Database Connection Failed!\nError:${err}`));
 

@@ -6,80 +6,97 @@
  * Controller for handling Podcast Episode's Management routes in the Bliss App.
  * 
  * @param {Sequelize} databaseConnection Sequelize Database Connection Object
- * @param {Firebase} firebaseBucket Firebase Bucket Reference Object
+ * @param {AWS SDK Object} S3Client S3 Client Object
+ * @param {AWS SDK Object} SNSClient SNS Client Object
  *
  */
-module.exports = (databaseConnection, firebaseBucket) => {
-    const Model = require('../models')(databaseConnection);
-    const crypto = require('crypto');
-    const { PubSub } = require('@google-cloud/pubsub');
-    const PubSubConfig = require('../config/cloud.publisher.json');
-    const pubSubClient = new PubSub({ credentials: PubSubConfig });
-    const podcastEpisodesModel = Model.podcastEpisodesModel;
-    const podcastIndexModel = Model.podcastIndexModel;
-    const podcastEpisodeStatsModel = Model.podcastEpisodeStatsModel;
-    const topicName = 'projects/twilight-cloud/topics/PODCAST_EPISODE_CREATE_CALLBACK';
+module.exports = (postgresClient, S3Client, SNSClient) => {
 
-    
+    //Importing Modules
+    const models = require('../models')
+    const chalk = require('../chalk.console');
+
+    //Initializing Variables
+    const Model = models(postgresClient);
+    const podcastEpisodeModel = Model.podcastEpisodesModel
+    const podcastEpisodeStatsModel = Model.podcastEpisodeStatsModel;
+
+    const podcastEpisodeVideoBucket = process.env.PODCAST_EPISODE_VIDEO_BUCKET;
+    const podcastEpisodeVideoOutputBucket = process.env.PODCAST_EPISODE_VIDEO_OUTPUT_BUCKET;
+    const podcastEpisodeUploadSNSArn = process.env.PODCAST_EPISODE_UPLOAD_SNS_ARN;
+    const podcastImageOutputCDN = process.env.PODCAST_IMAGE_OUTPUT_CDN;
+
     /**
      * 
-     * Send Notification to PubSub Server about the Episode Created, which will further process
-     * the video, and handle the notification service
+     * Send Notification to PubSub Server about the Podcast Created, and handle the 
+     * notification service
      * 
      * @param {String} podcastTitle Podcast Title, in which the episode is to be created
-     * @param {String} episodeTitle Episode Title
      * 
      */
-    const sendPubSubNotification = async (podcastTitle, episodeNumber, episodeTitle) => {
-        const updateNotification = {
-            PODCAST_TITLE: podcastTitle,
-            EPISODE_NUMBER: episodeNumber,
-            EPISODE_TITLE: episodeTitle
+    const sendPodcastEpisodeCreatedNotification = async (podcastTitle, episodeNumber, episodeTitle) => {
+        const snsMessage = {
+            PodcastTitle: podcastTitle,
+            episodeTitle: episodeTitle,
+            episodeNumber: episodeNumber,
+            Message: 'PODCAST_EPISODE_CREATED'
         };
 
-        const attributes = {
-            origin: crypto
-                    .createHash('sha512')
-                    .update('Bliss LLC.')
-                    .digest('hex')
-        }
+        const notification = {
+            Message: JSON.stringify(snsMessage),
+            TopicArn: podcastEpisodeUploadSNSArn
+        };
 
-        const PubSubUpdateDataBuffer = Buffer.from(JSON.stringify(updateNotification));
-        const messageId = await pubSubClient.topic(topicName).publish(PubSubUpdateDataBuffer, attributes);
-        return messageId;
+        const snsClientPromise = SNSClient.publish(notification).promise();
+        
+        return snsClientPromise
+            .then((data) => {
+                console.log(chalk.success(`Podcast Episode Created Successfully. Message ID: ${data.MessageId}`));
+                return [null, true];
+            })
+            .catch((err) => {
+                console.error(chalk.error(`ERR: ${err.message}`));
+                return [err, false];
+            })
+    };
+
+    /**
+     * 
+     * Function to upload podcast image in the S3
+     * 
+     * @param {stream} imageStream readStream of the image file, uploaded through the multer
+     * @param {string} videoFileName Name of the Podcast Image File (.png)
+     * @param {string} imageMIMEType MIME of the image upload
+     * @returns {string} URL for downloading podcast image from the CDN (cached)
+     * 
+     */    
+    const uploadEpisodeVideo = async (videoStream, videoFileName, videoMIMEType) => {
+        const videoParam = { 
+            Bucket: podcastEpisodeVideoBucket,
+            Key: videoFileName,
+            Body: videoStream,
+            ContentType: videoMIMEType
+        };
+
+        const s3UploadPromise = S3Client.upload(videoParam).promise();
+        return s3UploadPromise.then(() => { return true });
     }
 
     /**
      * 
-     * Get Episode Video Uploading Cloud Storage Bucket SignedURL
+     * Function to get the URL for downloading podcast image from the CDN (cached)
      * 
-     * @param {String} podcastTitle Podcast Title, in which the episode is to be created
-     * @param {String} episodeNumber Episode Number
-     * @param {String} videoFileName File name of the Podcast Episode
+     * @param {string} videoFileName Name of the Podcast Image File (.png)
+     * @returns {String} URL for downloading podcast image from the CDN (cached)
      * 
      */
-    const getEpisodeUploadSignedURL = async (podcastTitle, episodeNumber, episodeTitle) => {
-        const videoFile = firebaseBucket.file(`podcasts/${podcastTitle}/episodes/input/${episodeNumber}-${episodeTitle}.avi`);
+    const getEpisodeDownloadUrl = async videoFileName => {
+        const videoExists = await checkEpisodeVideoExists(videoFileName);
 
-        const signUrlOptions = {
-            version: 'v4',
-            action: 'write',
-            expires: Date.now() + 240000,
-            contentType: `video/x-msvideo`
-        };
-
-        const podcastExists = await podcastIndexModel.findAll({where: {podcast_title: podcastTitle}});
-        if(podcastExists.length !== 0) {
-            const fileExists = await videoFile.exists();
-            if(fileExists[0]) {
-                throw new Error(`Video Already Exists.`);
-            };
-
-            const urlCloudStorageResponse = await videoFile.getSignedUrl(signUrlOptions);
-            return urlCloudStorageResponse[0];
-        } else {
-            throw new Error(`Podcast Doens't Exists Yet! Create Podcast First`);
-        }
+        if(videoExists)
+            return `${podcastImageOutputCDN}/${videoFileName}`;
+        else
+            return `No Episode Exists`;
     }
 
     /**
@@ -92,28 +109,91 @@ module.exports = (databaseConnection, firebaseBucket) => {
      * @param {String} episodeDescription Short Description of Episode
      * 
      */
-    const uploadNewEpisode = async (podcastTitle, episodeTitle, episodeNumber, episodeDescription) => {
+    const uploadEpisodeData = async (podcastTitle, episodeTitle, episodeNumber, episodeDescription, episodeCDNLink) => {
         const EpisodeMetaData = {}
+        const StatsMetaData = {};
+        
+        const currTime = Date.now();
 
         EpisodeMetaData['podcast_title'] = podcastTitle;
         EpisodeMetaData['episode_number'] = episodeNumber;
         EpisodeMetaData['episode_title'] = episodeTitle;
         EpisodeMetaData['episode_description'] = episodeDescription;
-        EpisodeMetaData['episode_upload_date'] = Date.now();
-        EpisodeMetaData['episode_video_link'] = `podcasts/${podcastTitle}/episodes/input/${episodeNumber}-${episodeTitle}.avi`;
-    
-        const BucketResponse = await firebaseBucket.file(EpisodeMetaData['episode_video_link']).exists();
+        EpisodeMetaData['episode_upload_date'] = currTime;
+        EpisodeMetaData['episode_video_link'] = episodeCDNLink;
 
-        if(BucketResponse[0]) {
-            const DBResponse = await podcastEpisodesModel.create(EpisodeMetaData)
-            if(DBResponse){                    
-                return sendPubSubNotification(podcastTitle, episodeTitle);
-            }
-        } else {
-            throw new Error(`Video Hasn't Been Uploaded Yet. Please Upload Video Before Creating Record`);
-        }
+        StatsMetaData['podcast_title'] = podcastTitle;
+        StatsMetaData['episode_number'] = episodeNumber;
+        StatsMetaData['episode_title'] = episodeTitle;
+        StatsMetaData['episode_length'] = 0;
+        StatsMetaData['episode_likes'] = 0;
+        StatsMetaData['episode_play_count'] = 0;
+
+        return postgresClient.transaction(async (transactionKey) => {
+            await podcastEpisodeModel.create(EpisodeMetaData, {transaction: transactionKey});
+            await podcastEpisodeStatsModel.create(StatsMetaData, {transaction: transactionKey});
+            return true;
+        })
+        .catch((err) => {
+            throw new Error(err.message);
+        });
     };
-    
+
+    /**
+     * 
+     * Delete the Podcast Image from the S3 Bucket
+     * 
+     * @param {string} videoFileName Name of the podcast image file uploaded in the S3 Bucket
+     * 
+     */
+    const deletePodcastEpisodeVideo = async (videoFileName) => {
+        return new Promise(async (resolve, reject) => {
+            try {
+                const episodeParam = {
+                    Bucket: podcastEpisodeVideoBucket,
+                    Key: videoFileName
+                };
+
+                S3Client.deleteObject(episodeParam, (err, info) => {
+                    if(err){
+                        return reject(err);
+                    } else {
+                        return resolve(true);
+                    }
+                });
+            } catch(err) {
+                return reject(err);
+            };
+        })
+    }
+
+    /**
+     * 
+     * Delete Podcast Episode Video from the S3 Output Bucket
+     * 
+     * @param {string} videoFileName Name fo the video file uploaded in the S3 Bucket
+     */
+    const deletePodcastEpisodeOutputVideo = async (videoFileName) => {
+        return new Promise(async (resolve, reject) => {
+            try {
+                const episodeParam = {
+                    Bucket: podcastEpisodeVideoOutputBucket,
+                    Key: videoFileName
+                };
+
+                S3Client.deleteObject(episodeParam, (err, info) => {
+                    if(err){
+                        return reject(err);
+                    } else {
+                        return resolve(true);
+                    }
+                });
+            } catch(err) {
+                return reject(err);
+            };
+        })
+    }
+
     /**
      * 
      * Delete Episode of a Podcast
@@ -122,19 +202,33 @@ module.exports = (databaseConnection, firebaseBucket) => {
      * @param {String} episodeNumber Episode Number of the podcast
      * @param {String} episodeTitle Episode Title
      */
-    const deleteEpisode = async (podcastTitle, episodeNumber, episodeTitle) => {
-        const episodeVideoLink = firebaseBucket.file(`podcasts/${podcastTitle}/episodes/input/${episodeNumber}-${episodeTitle}.avi`);
+    const deleteEpisode = async (podcastTitle, episodeNumber, episodeTitle, videoFileName) => {
+        await deletePodcastEpisodeVideo(videoFileName);
+        await deletePodcastEpisodeOutputVideo(videoFileName);
 
-        await episodeVideoLink.delete();
-        await podcastEpisodesModel.destroy({
-            where: {
-                podcast_name: podcastName,
-                episode_number: episodeNumber,
-                episode_title: episodeTitle
-            }
+        return postgresClient.transaction(async (transactionKey) => {
+            await podcastEpisodeStatsModel.destroy({
+                where: {
+                    podcast_title: podcastTitle,
+                    episode_number: episodeNumber,
+                    episode_title: episodeTitle
+                }
+            }, {
+                transaction: transactionKey
+            });
+            await podcastEpisodeModel.destroy({
+                where: {
+                    podcast_title: podcastTitle,
+                    episode_number: episodeNumber,
+                    episode_title: episodeTitle
+                }
+            }, {
+                transaction: transactionKey
+            });
+        })
+        .catch((err) => {
+            throw new Error(err.message);
         });
-
-        return episodeTitle;
     };
     
     /**
@@ -145,12 +239,61 @@ module.exports = (databaseConnection, firebaseBucket) => {
      * 
      */
     const getEpisodesOfPodcast = async (podcastTitle) => {
-        const response = await podcastEpisodesModel.findAll({
+        const episodes = [];
+
+        const episodeResponse = await podcastEpisodeModel.findAll({
             where: {podcast_title : podcastTitle},
             includes: {model: [podcastEpisodeStatsModel]}
         });
-        return response;
+
+        episodeResponse.forEach(episode => episodes.push(episode));
+
+        return episodes;
     }
+
+    /**
+     * 
+     * Get Data of the Podcast Episode stored in the database
+     * 
+     * @param {string} podcastTitle Title of the Podcast
+     * @param {number} episodeNumber Episode Number of the podcast to be fetched from the database
+     * 
+     */
+    const getEpisodeData = async (podcastTitle, episodeNumber) => {
+        const episodes = [];
+
+        const episodeResponse = await podcastEpisodeModel.findAll({
+            where: {
+                podcast_title : podcastTitle,
+                episode_number: episodeNumber,
+            },
+
+            includes: {
+                model: [podcastEpisodeStatsModel]
+            }
+        });
+
+        episodeResponse.forEach(episode => episodes.push(episode));
+
+        return episodes;
+    }
+
+    /** 
+     * 
+     * Transmux Input Video into Streamable Output Videos
+     * 
+    */
+    const transmuxEpisode = async (videoStream, videoFileName, videoMIMEType) => {
+        const videoParam = { 
+            Bucket: podcastEpisodeVideoOutputBucket,
+            Key: videoFileName,
+            Body: videoStream,
+            ContentType: videoMIMEType
+        };
+
+        const s3UploadPromise = S3Client.upload(videoParam).promise();
+        return s3UploadPromise.then(() => { return true });
+    };
 
     /**
      * 
@@ -158,18 +301,88 @@ module.exports = (databaseConnection, firebaseBucket) => {
      * 
      * @param {String} podcastTitle Podcast Title, whose episode is to be deleted.
      * @param {String} episodeNumber Episode Number of the podcast
-     * @param {String} episodeTitle Episode Title
      * 
      */
-    const getStatsOfEpisode = async (podcastTitle, episodeNumber, episodeTitle) => {
-        return await podcastEpisodeStatsModel.findAll({
+    const getEpisodeStats = async (podcastTitle, episodeNumber) => {
+        const podcastStats = [];
+
+        const statsResponse = await podcastEpisodeStatsModel.findAll({
             where: {
                 podcast_title: podcastTitle, 
-                episode_number: episodeNumber, 
-                episode_title: episodeTitle
+                episode_number: episodeNumber
             }
         });
+
+        statsResponse.forEach(stats => podcastStats.push(stats));
+
+        return podcastStats;
     }
 
-    return { uploadNewEpisode, deleteEpisode, getEpisodesOfPodcast, getEpisodeUploadSignedURL, getStatsOfEpisode };
+    /**
+     * 
+     * Check if the Episode Data of the Podcast Exists in the Database
+     * 
+     * @param {string} podcastTitle Title of the Podcast
+     * @param {number} episodeNumber Episode Number of the podcast to be fetched from the database
+     * 
+     */
+    const checkEpisodeDataExists = async (podcastTitle, episodeNumber) => {
+        const podcastEpisodeRecords = await podcastEpisodeModel.findAll({
+            where: {
+                podcast_title: podcastTitle,
+                episode_number: episodeNumber
+            }
+        });
+
+        if(podcastEpisodeRecords.length !== 0) {
+            return true;
+        }
+        else {
+            return false;
+        }
+    }
+
+    /**
+     * 
+     * Check if the Episode of the Podcast Exists in the S3 Bucket as a video file.
+     * 
+     * @param {string} videoFileName Name of the Video file uploaded in the S3 Bucket
+     * 
+     */
+    const checkEpisodeVideoExists = async (videoFileName) => {
+        return new Promise((resolve, reject) => {
+            try {
+                const videoParam = {
+                    Bucket: podcastEpisodeVideoOutputBucket,
+                    Key: videoFileName
+                };
+                
+                S3Client.headObject(videoParam, (err, metadate) => {
+                    if(err && err.statusCode === 404) {
+                        return resolve(false);
+                    } else if(err) {
+                        return reject(err);
+                    }else {
+                        return resolve(true);
+                    }
+                });
+            } catch(err) {
+                return reject(err);
+            };
+        })
+    }
+
+    return { 
+        checkEpisodeDataExists,
+        checkEpisodeVideoExists,
+        deleteEpisode,
+        getEpisodeData,
+        getEpisodeDownloadUrl,
+        getEpisodesOfPodcast,
+        getEpisodeStats,
+        sendPodcastEpisodeCreatedNotification,
+        transmuxEpisode,
+        uploadEpisodeData,
+        uploadEpisodeVideo
+    };
 }

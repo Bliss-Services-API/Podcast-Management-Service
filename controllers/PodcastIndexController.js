@@ -4,44 +4,189 @@
  * 
  * Controller for handling Podcasts' Management routes in the Bliss App.
  * 
- * @param {Sequelize} databaseConnection Sequelize Database Connection Object
- * @param {Firebase} firebaseBucket Firebase Bucket Reference Object
+ * @param {Sequelize} postgresClient Sequelize Database Connection Object
+ * @param {AWS SDK Object} S3Client S3 Client Object
+ * @param {AWS SDK Object} SNSClient SNS Client Object
  * 
  */
-module.exports = (databaseConnection, firebaseBucket) => {
-    const Model = require('../models')(databaseConnection);
-    const crypto = require('crypto');
-    const { PubSub } = require('@google-cloud/pubsub');
-    const pubSubConfig = require('../config/cloud.publisher.json');
-    const pubSubClient = new PubSub({ credentials: pubSubConfig });
+module.exports = (postgresClient, S3Client, SNSClient) => {
+
+    //Importing Modules
+    const models = require('../models')
+    const chalk = require('../chalk.console');
+
+    //Initializing Variables
+    const Model = models(postgresClient);
     const podcastIndexModel = Model.podcastIndexModel;
     const podcastEpisodeModel = Model.podcastEpisodesModel;
     const podcastEpisodeStatsModel = Model.podcastEpisodeStatsModel;
-    const topicName = 'projects/twilight-cloud/topics/PODCAST_INDEX_CREATED_CALLBACK';
+
+    const podcastImageBucket = process.env.PODCAST_IMAGE_BUCKET;
+    const podcastUploadSNSArn = process.env.PODCAST_UPLOAD_SNS_ARN;
+    const podcastVideoOutputCDN = process.env.PODCAST_VIDEO_OUTPUT_CDN;
+
+     /**
+     * 
+     * Function to get the URL for downloading podcast image from the CDN (cached)
+     * 
+     * @param {string} imageFileName Name of the Podcast Image File (.png)
+     * @returns {String} URL for downloading podcast image from the CDN (cached)
+     * 
+     */
+    const getImageDownloadUrl =  async imageFileName => {
+        const imageExists = await checkImageExist(imageFileName);
+        
+        if(imageExists)
+            return `${podcastVideoOutputCDN}/${imageFileName}`;
+        else 
+            return `No Image Exists`;
+    }
 
     /**
      * 
-     * Send Notification to PubSub Server about the Podcast Created, and handle the 
-     * notification service
+     * Function to Upload Podcast Image in the S3 Bucket
      * 
-     * @param {String} podcastTitle Podcast Title, in which the episode is to be created
+     * @param {stream} imageStream readStream of the image file, uploaded through the multer
+     * @param {string} imageFileName Name of the Podcast Image File (.png)
+     * @param {string} imageMIMEType MIME of the image upload
+     * @returns {string} URL for downloading podcast image from the CDN (cached)
      * 
-     */
-    const sendPubSubNotification = async (podcastTitle) => {
-        const updateNotification = {
-            PODCAST_ID: podcastTitle,
+     */    
+    const uploadPodcastImage = async (imageStream, imageFileName, imageMIMEType) => {
+        const imageParam = { 
+            Bucket: podcastImageBucket,
+            Key: imageFileName,
+            Body: imageStream,
+            ContentType: imageMIMEType
         };
 
-        const attributes = {
-            origin: crypto
-                    .createHash('sha512')
-                    .update('Twilight Podcast Management Service')
-                    .digest('hex')
-        }
+        const s3UploadPromise = S3Client.upload(imageParam).promise();
+        return s3UploadPromise.then(() => { return true });
+    }
 
-        const PubSubUpdateDataBuffer = Buffer.from(JSON.stringify(updateNotification));
-        const messageId = await pubSubClient.topic(topicName).publish(PubSubUpdateDataBuffer, attributes);
-        return messageId;
+    /**
+     * 
+     * Function to Check Whether Podcast Image exists on the S3 Bucket
+     * 
+     * @param {string} imageFileName Name of the Podcast Image File (.png)
+     * @returns {Promise} Resolve contains true (image exists), and reject contains error
+     * or false (image doesn't exists)
+     * 
+     */
+    const checkImageExist = async imageFileName => {
+       
+
+        return new Promise((resolve, reject) => {
+            try {
+                const imageParam = {
+                    Bucket: podcastImageBucket,
+                    Key: imageFileName
+                };
+                
+                S3Client.headObject(imageParam, (err, metadate) => {
+                    if(err && err.statusCode === 404) {
+                        return resolve(false);
+                    } else if(err) {
+                        return reject(err);
+                    }else {
+                        return resolve(true);
+                    }
+                });
+            } catch(err) {
+                return reject(err);
+            };
+        })
+    }
+    
+    /**
+     * 
+     * Create the Podcast Index Record in the Database
+     * 
+     * @param {String} podcastTitle Podcast Title
+     * @param {String} podcastDescription Short Description of the Podcast
+     * @param {String} podcastHost Name of the Podcast Host
+     * @param {String} podcastImageCDNLink Link for CDN pointing to the podcast image uploaded in the 
+     * S3 Bucket
+     */
+    const uploadPodcastDatabaseRecord = async (podcastTitle, podcastDescription, podcastHost, podcastImageCDNLink) => {
+        const PodcastMetaData = {};
+        const currTime = Date.now();
+        
+        PodcastMetaData['podcast_title'] = podcastTitle;
+        PodcastMetaData['podcast_description'] = podcastDescription;
+        PodcastMetaData['podcast_image_link'] = podcastImageCDNLink;
+        PodcastMetaData['podcast_host'] = podcastHost;
+        PodcastMetaData['podcast_subscribers_count'] = '0';
+        PodcastMetaData['podcast_episodes_count'] = '0';
+        PodcastMetaData['podcast_creation_date'] = currTime;
+        PodcastMetaData['last_update'] = currTime;
+    
+        await podcastIndexModel.create(PodcastMetaData);
+        // return await sendPubSubNotification(podcastTitle)
+        return true;
+    }
+
+    /**
+     * 
+     * Returns all available podcasts in the Database and Cloud Server
+     * 
+     */
+    const getAllPodcasts = async () => {
+        const podcasts = [];
+        const podcastRecords = await podcastIndexModel.findAll();
+        
+        podcastRecords.forEach(podcast => podcasts.push(podcast['dataValues']));
+
+        if(podcasts.length !== 0)
+            return podcasts;
+        else {
+            return 'No Podcast Exists'
+        }
+    }
+
+    /**
+     * 
+     * Check if podcast exists in the record, whose title matches with the provided
+     * podcastTitle argument.
+     * 
+     * @param {String} podcastTitle Podcast Title, whose data is to be fetched
+     * @returns false, if no such podcast exists. Else, returns true
+     * 
+     */
+    const checkPodcastExists = async (podcastTitle) => {
+        const podcastRecords = await podcastIndexModel.findAll({
+            where: {
+                podcast_title: podcastTitle
+            }
+        });
+
+        if(podcastRecords.length !== 0) {
+            return true;
+        }
+        else {
+            return false;
+        }
+    }
+    
+    /**
+     * 
+     * Return the Podcast Record from the Database, whose title matches with the provided
+     * podcastTitle argument.
+     * 
+     * @param {String} podcastTitle Podcast Title, whose data is to be fetched
+     * @returns false, if no such podcast exists. Else, podcast data
+     * 
+     */
+    const getPodcastData = async (podcastTitle) => {
+        const podcasts = [];
+        const podcastRecords = await podcastIndexModel.findAll({
+            where: {
+                podcast_title: podcastTitle
+            }
+        });
+
+        podcastRecords.forEach(podcast => podcasts.push(podcast['dataValues']));
+        return podcasts;
     }
 
     /**
@@ -51,89 +196,81 @@ module.exports = (databaseConnection, firebaseBucket) => {
      * @param {String} podcastTitle Podcast Title to be deleted
      * 
      */
-    const deletePodcastIndexRecordandImage = async (podcastTitle) => {
-        await firebaseBucket.deleteFiles({
-            prefix: `podcasts/${podcastTitle}`
-        });
+    const deletePodcast = async (podcastTitle, imageFileName) => {
+        await deletePodcastImage(imageFileName);
 
         await podcastEpisodeStatsModel.destroy({ where: { podcast_title: podcastTitle } });
         await podcastEpisodeModel.destroy({ where: { podcast_title: podcastTitle } });
         await podcastIndexModel.destroy({ where: { podcast_title: podcastTitle } });
-
+        
         return podcastTitle;
     }
 
     /**
      * 
-     * Returns the SignedURL for cloud storage bucket file reference, where the podcast image
-     * will be uploaded
+     * Delete the Podcast Image from the S3 Bucket
      * 
-     * @param {String} podcastTitle Title of the Podcast, whose image is to be uploaded
-     * @param {String} imageType MIME type of the image of the podcast, to be uploaded in the cloud
+     * @param {string} imageFileName Name of the podcast image file uploaded in the S3 Bucket
+     * 
      */
-    const getImageUploadSignedURL = async (podcastTitle, imageType) => {
-        const imageFile = firebaseBucket.file(`podcasts/${podcastTitle}/Thumbnail.${imageType}`);
+    const deletePodcastImage = async (imageFileName) => {
+        return new Promise(async (resolve, reject) => {
+            try {
+                const imageParam = {
+                    Bucket: podcastImageBucket,
+                    Key: imageFileName
+                };
 
-        const signUrlOptions = {
-            version: 'v4',
-            action: 'write',
-            expires: Date.now() + 120000,
-            contentType: `image/${imageType}`
-        };
-
-        const fileExists = await imageFile.exists();
-        if(fileExists[0]) {
-            throw new Error(`Image Name Already Exists. Choose Different Image`);
-        };
-
-        const urlCloudResponse = await imageFile.getSignedUrl(signUrlOptions);
-        console.log(urlCloudResponse);
-        return urlCloudResponse[0]
+                S3Client.deleteObject(imageParam, (err, info) => {
+                    if(err){
+                        return reject(err);
+                    } else {
+                        return resolve(true);
+                    }
+                });
+            } catch(err) {
+                return reject(err);
+            };
+        })
     }
 
     /**
      * 
-     * Create the Podcast Index Record in the Database
+     * Send Notification to PubSub Server about the Podcast Created, and handle the 
+     * notification service
      * 
-     * @param {String} podcastTitle Podcast Title
-     * @param {String} podcastDescription Short Description of the Podcast
-     * @param {String} podcastHost Name of the Podcast Host
-     * @param {String} imageType MIME type of the podcast image uploaded in the cloud storage
+     * @param {String} podcastTitle Podcast Title, in which the episode is to be created
+     * 
      */
-    const createNewPodcastRecord = async (podcastTitle, podcastDescription, podcastHost, imageType) => {
-        const PodcastMetaData = {};
+    const sendPodcastCreatedNotification = async (podcastTitle) => {
+        const snsMessage = {
+            PodcastTitle: podcastTitle,
+            Message: 'PODCAST_CREATED'
+        };
+
+        const updateNotification = {
+            Message: JSON.stringify(snsMessage),
+            TopicArn: podcastUploadSNSArn
+        };
+
+        const snsClientPromise = SNSClient.publish(updateNotification).promise();
         
-        PodcastMetaData['podcast_title'] = podcastTitle;
-        PodcastMetaData['podcast_description'] = podcastDescription;
-        PodcastMetaData['podcast_image_link'] = `podcasts/${podcastTitle}/Thumbnail.${imageType}`;
-        PodcastMetaData['podcast_host'] = podcastHost;
-        PodcastMetaData['podcast_subscribers_count'] = '0';
-        PodcastMetaData['podcast_episodes_count'] = '0';
-        PodcastMetaData['podcast_creation_date'] = Date.now();
-        PodcastMetaData['last_update'] = Date.now();
-    
-        const BucketResponse = await firebaseBucket.file(PodcastMetaData['podcast_image_link']).exists()
+        return snsClientPromise
+            .then((data) => {
+                console.log(chalk.success(`Podcast Created Successfully. Message ID: ${data.MessageId}`));
+                return true;
+            })
+    };
 
-        if(BucketResponse[0]) {
-            const DBResponse = await podcastIndexModel.create(PodcastMetaData)
-            if(DBResponse){
-                return await sendPubSubNotification(podcastTitle);
-            } else {
-                throw new Error(`Podcast couldn't be created!`);
-            }
-        } else {
-            throw new Error(`Image Hasn't Been Uploaded Yet. Please Upload Image Before Creating Record`);
-        }
-    }
-
-    /**
-     * 
-     * Returns all available podcasts in the Database and Cloud Server
-     * 
-     */
-    const getPodcasts = async () => {
-        return await podcastIndexModel.findAll();
-    }
-
-    return { createNewPodcastRecord, getImageUploadSignedURL, deletePodcastIndexRecordandImage, getPodcasts};
+    return { 
+        deletePodcast,
+        getImageDownloadUrl,
+        getAllPodcasts,
+        getPodcastData,
+        checkImageExist,
+        uploadPodcastImage,
+        checkPodcastExists,
+        uploadPodcastDatabaseRecord,
+        sendPodcastCreatedNotification
+    };
 }
