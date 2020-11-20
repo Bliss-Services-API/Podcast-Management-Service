@@ -53,17 +53,11 @@ module.exports = (postgresClient, S3Client, SNSClient) => {
                 const podcastRecordExists = await podcastIndexController.checkPodcastExists(podcastTitle);
 
                 if(podcastRecordExists){
-                    return res.status(400).send({
-                        ERR: 'Podcast Index Already Exists',
-                        CODE: 'PODCAST_INDEX_EXISTS'
-                    });
+                    throw new Error('Podcast Index Already Exists');
                 }
 
                 else if(podcastImageExists && !imageOverride) {
-                    return res.send(400).send({
-                        ERR: `Podcast Image Already Exists.`,
-                        CODE: 'PODCAST_IMAGE_EXISTS'
-                    });
+                    throw new Error(`Podcast Image Already Exists.`)
                 }
 
                 else {
@@ -87,9 +81,9 @@ module.exports = (postgresClient, S3Client, SNSClient) => {
                 console.error(chalk.error(`ERR: ${err}`));
 
                 return res.send({
-                    ERR: `Podcast Index Uploading Failed!`,
+                    ERR: err.message,
+                    RESPONSE: `Podcast Index Uploading Failed!`,
                     CODE: 'PODCAST_INDEX_UPLOAD_FAILED',
-                    BODY: err.message
                 });
             }
             finally {
@@ -115,9 +109,9 @@ module.exports = (postgresClient, S3Client, SNSClient) => {
         } catch(err) {
             console.error(chalk.error(`ERR: ${err}`));
             return res.send({
-                ERR: `Podcast Fetching Failed!`,
+                ERR: err.message,
+                RESPONSE: `Podcast Fetching Failed!`,
                 CODE: 'ALL_PODCAST_FETCH_FAILED',
-                BODY: err.message
             });
         }
     });
@@ -145,9 +139,9 @@ module.exports = (postgresClient, S3Client, SNSClient) => {
         } catch(err) {
             console.error(chalk.error(`ERR: ${err}`));
             return res.send({
-                ERR: `Podcast Deletion Failed!`,
+                ERR: err.message,
+                RESPONSE: `Podcast Deletion Failed!`,
                 CODE: 'PODCAST_DELETION_FAILED',
-                BODY: err.message
             });
         }
     })
@@ -173,9 +167,9 @@ module.exports = (postgresClient, S3Client, SNSClient) => {
         } catch(err) {
             console.error(chalk.error(`ERR: ${err}`));
             return res.send({
-                ERR: `Podcast Verification Failed!`,
+                ERR: err.message,
+                RESPONSE: `Podcast Verification Failed!`,
                 CODE: 'PODCAST_VERIFICATION_FAILED',
-                BODY: err.message
             });
         }
     })
@@ -202,9 +196,9 @@ module.exports = (postgresClient, S3Client, SNSClient) => {
         } catch(err) {
             console.error(chalk.error(`ERR: ${err}`));
             return res.send({
-                ERR: `Podcast Fetching Failed!`,
+                ERR: err.message,
+                REPONSE: `Podcast Fetching Failed!`,
                 CODE: 'PODCAST_DATA_FETCH_FAILED',
-                BODY: err.message
             });
         }
     });
@@ -227,9 +221,9 @@ module.exports = (postgresClient, S3Client, SNSClient) => {
         catch(err) {
             console.error(chalk.error(`ERR: ${err}`));
             return res.send({
-                ERR: `Podcast Image CDN URL Fetching Failed!`,
+                ERR: err.message,
+                RESPONSE: `Podcast Image CDN URL Fetching Failed!`,
                 CODE: 'IMAGE_CDN_URL_FETCH_FAILED',
-                BODY: err.message
             });
         }
     })
@@ -312,9 +306,9 @@ module.exports = (postgresClient, S3Client, SNSClient) => {
                 console.error(chalk.error(`ERR: ${err}`));
 
                 return res.send({
-                    ERR: `Podcast Index Uploading Failed!`,
+                    ERR: err.message,
+                    RESPONSE: `Podcast Index Uploading Failed!`,
                     CODE: 'PODCAST_INDEX_UPLOAD_FAILED',
-                    BODY: err.message
                 });
             }
             finally {
@@ -351,9 +345,9 @@ module.exports = (postgresClient, S3Client, SNSClient) => {
         catch(err) {
             console.error(chalk.error(`ERR: ${err}`));
             res.send({
-                ERR: 'Podcast Deletion Failed',
+                ERR: err.message,
+                RESPONSE: 'Podcast Deletion Failed',
                 CODE: 'PODCAST_EPISODE_DELETION_FAILED',
-                BODY: err.message
             });
         }
     });
@@ -381,9 +375,9 @@ module.exports = (postgresClient, S3Client, SNSClient) => {
         catch(err) {
             console.error(chalk.error(`ERR: ${err}`));
             res.send({
-                ERR: 'Episodes Fetch Failed',
+                ERR: err.message,
+                RESPONSE: 'Episodes Fetch Failed',
                 CODE: 'EPISODE_FETCH_FAILED',
-                BODY: err.message
             });
         }
     });
@@ -412,14 +406,58 @@ module.exports = (postgresClient, S3Client, SNSClient) => {
         } catch(err) {
             console.error(chalk.error(`ERR: ${err}`));
             res.send({
-                ERR: 'Episodes Stats Fetch Failed',
+                ERR: err.message,
+                RESPONSE: 'Episodes Stats Fetch Failed',
                 CODE: 'STATS_FETCH_FAILED',
-                BODY: err.message
             });
         }
     })
     
+    router.get('/subscribe', async (req, res) => {
+        const podcastTitle = req.query.podcast_title;
+        const clientId = req.query.client_id;
 
+        try {
+            await podcastIndexController.subscribePodcast(clientId, podcastTitle);
+
+            res.send({
+                Message: 'DONE',
+                Response: 'Podcast Subscribed Successfully',
+                CODE: 'PODCAST_SUBSCRIBED',
+            });
+        } catch(err) {
+            console.error(chalk.error(`ERR: ${err.message}`));
+            res.send({
+                ERR: err.message,
+                Response: 'Podcast Subscribed Failed',
+                CODE: 'PODCAST_SUBSCRIPTION_FAILED',
+            });
+        }
+    })
+ 
+
+    router.get('/unsubscribe', async (req, res) => {
+        const podcastTitle = req.query.podcast_title;
+        const clientId = req.query.client_id;
+
+        try {
+            await podcastIndexController.unsubscribePodcast(clientId, podcastTitle);
+
+            res.send({
+                Message: 'DONE',
+                Response: 'Podcast Unsubscribed Successfully',
+                CODE: 'PODCAST_UNSUBSCRIBED',
+            });
+        } catch(err) {
+            console.error(chalk.error(`ERR: ${err.message}`));
+            res.send({
+                ERR: err.message,
+                Response: 'Podcast Unsubscribed Failed',
+                CODE: 'PODCAST_UNSUBSCRIPTION_FAILED',
+            });
+        }
+    })
+ 
     /**
      * 
      * GET data of an episodes in the podcast. Pass the following params in query:
@@ -446,9 +484,9 @@ module.exports = (postgresClient, S3Client, SNSClient) => {
         catch(err) {
             console.error(chalk.error(`ERR: ${err}`));
             res.send({
-                ERR: 'Episodes Fetch Failed',
+                ERR: err.message,
+                RESPONSE: 'Episodes Fetch Failed',
                 CODE: 'EPISODE_DATA_FETCH_FAILED',
-                BODY: err.message
             });
         }
     })
@@ -469,9 +507,9 @@ module.exports = (postgresClient, S3Client, SNSClient) => {
         catch(err) {
             console.error(chalk.error(`ERR: ${err}`));
             return res.send({
-                ERR: `Podcast Episode CDN URL Fetching Failed!`,
+                ERR: err.message,
+                RESPONSE: `Podcast Episode CDN URL Fetching Failed!`,
                 CODE: 'EPISODE_CDN_URL_FETCH_FAILED',
-                BODY: err.message
             });
         }
     })

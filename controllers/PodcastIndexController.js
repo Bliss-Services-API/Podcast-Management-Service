@@ -17,9 +17,11 @@ module.exports = (postgresClient, S3Client, SNSClient) => {
 
     //Initializing Variables
     const Model = models(postgresClient);
+
     const podcastIndexModel = Model.podcastIndexModel;
     const podcastEpisodeModel = Model.podcastEpisodesModel;
     const podcastEpisodeStatsModel = Model.podcastEpisodeStatsModel;
+    const podcastSubscriberModel = Model.podcastSubscriberModel;
 
     const podcastImageBucket = process.env.PODCAST_IMAGE_BUCKET;
     const podcastUploadSNSArn = process.env.PODCAST_UPLOAD_SNS_ARN;
@@ -74,8 +76,6 @@ module.exports = (postgresClient, S3Client, SNSClient) => {
      * 
      */
     const checkImageExist = async imageFileName => {
-       
-
         return new Promise((resolve, reject) => {
             try {
                 const imageParam = {
@@ -234,6 +234,23 @@ module.exports = (postgresClient, S3Client, SNSClient) => {
         })
     }
 
+    const subscribePodcast = async (clientId, podcastTitle) => {
+        await podcastSubscriberModel.create({
+            client_id: clientId,
+            podcast_title: podcastTitle,
+            subscription_date: `${new Date.now()}`
+        });
+    };
+
+    const unsubscribePodcast = async (clientId, podcastTitle) => {
+        await podcastSubscriberModel.destroy({
+            where: {
+                client_id: clientId,
+                podcast_title: podcastTitle,
+            }
+        });
+    };
+
     /**
      * 
      * Send Notification to PubSub Server about the Podcast Created, and handle the 
@@ -270,6 +287,8 @@ module.exports = (postgresClient, S3Client, SNSClient) => {
         checkImageExist,
         uploadPodcastImage,
         checkPodcastExists,
+        subscribePodcast,
+        unsubscribePodcast,
         uploadPodcastDatabaseRecord,
         sendPodcastCreatedNotification
     };
