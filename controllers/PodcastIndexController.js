@@ -37,11 +37,18 @@ module.exports = (postgresClient, S3Client, SNSClient) => {
      */
     const getImageDownloadUrl =  async imageFileName => {
         const imageExists = await checkImageExist(imageFileName);
+
+        if(imageExists) {
+            const expire = 5 * 60 * 1000;
+
+            const signedUrl = CloudFront.getSignedUrl({
+                    expires: Math.floor((Date.now() + expire)/1000),
+                });
         
-        if(imageExists)
-            return `${podcastVideoOutputCDN}/${imageFileName}`;
-        else 
+            return {signedUrl, expireTime};
+        } else {
             return `No Image Exists`;
+        }
     }
 
     /**
@@ -232,7 +239,7 @@ module.exports = (postgresClient, S3Client, SNSClient) => {
                 return reject(err);
             };
         })
-    }
+    };
 
     const subscribePodcast = async (clientId, podcastTitle) => {
         await podcastSubscriberModel.create({

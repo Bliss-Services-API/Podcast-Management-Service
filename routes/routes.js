@@ -8,7 +8,7 @@
  * @param {Firebase} firebaseBucket Firebase Bucket Reference Object
  *
  */
-module.exports = (postgresClient, S3Client, SNSClient) => {
+module.exports = (postgresClient, S3Client, SNSClient, CloudFront) => {
     
     //Importing Modules
     const fs = require('fs');
@@ -19,7 +19,7 @@ module.exports = (postgresClient, S3Client, SNSClient) => {
 
     //Initializing Varibles
     const router = express.Router();
-    const Controller = ControllerConstructor(postgresClient, S3Client, SNSClient);
+    const Controller = ControllerConstructor(postgresClient, S3Client, SNSClient, CloudFront);
     const podcastIndexMultipart = multer({dest: 'tmp/podcastImages/'});
     const podcastEpisodeMultipart = multer({dest: 'tmp/podcastEpisodes/'});
     const podcastIndexController = Controller.podcastIndexController;
@@ -435,7 +435,6 @@ module.exports = (postgresClient, S3Client, SNSClient) => {
         }
     })
  
-
     router.get('/unsubscribe', async (req, res) => {
         const podcastTitle = req.query.podcast_title;
         const clientId = req.query.client_id;

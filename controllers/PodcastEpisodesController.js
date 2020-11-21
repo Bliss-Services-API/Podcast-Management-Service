@@ -10,7 +10,7 @@
  * @param {AWS SDK Object} SNSClient SNS Client Object
  *
  */
-module.exports = (postgresClient, S3Client, SNSClient) => {
+module.exports = (postgresClient, S3Client, SNSClient, CloudFront) => {
 
     //Importing Modules
     const models = require('../models')
@@ -93,11 +93,20 @@ module.exports = (postgresClient, S3Client, SNSClient) => {
     const getEpisodeDownloadUrl = async videoFileName => {
         const videoExists = await checkEpisodeVideoExists(videoFileName);
 
-        if(videoExists)
-            return `${podcastImageOutputCDN}/${videoFileName}`;
-        else
+        if(videoExists) {
+            const expire = 24 * 60 * 60 * 1000;
+
+            const signedUrl = CloudFront.getSignedUrl({
+                url: `${podcastImageOutputCDN}/${videoFileName}`,
+                    expires: Math.floor((Date.now() + expire)/1000),
+                });
+        
+            return {signedUrl, expireTime};
+
+        } else {
             return `No Episode Exists`;
-    }
+        }
+    };
 
     /**
      * 
