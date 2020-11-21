@@ -9,7 +9,7 @@
  * @param {AWS SDK Object} SNSClient SNS Client Object
  * 
  */
-module.exports = (postgresClient, S3Client, SNSClient) => {
+module.exports = (postgresClient, S3Client, SNSClient, CloudFront) => {
 
     //Importing Modules
     const models = require('../models')
