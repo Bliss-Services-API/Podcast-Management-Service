@@ -15,15 +15,16 @@ require('dotenv').config();
 
 const fs = require('fs');
 const path = require('path');
-
 const AWS = require('aws-sdk');
 const morgan = require('morgan');
 const express = require('express');
+const passport = require('passport');
 const chalk = require('./chalk.console');
 const bodyParser = require('body-parser');
 const podcastRoutes = require('./routes/routes');
 const postgresConnection = require('./connections/PostgresConnection');
 const cloudFrontAccessID = require('./private/cloudfront.accessid.json');
+const tokenAuthStrategy = require('./strategy/TokenAuthorizationStrategy');
 
 const privateKeyPath = path.join(__dirname, "./private/cloudfront_private.pem")
 const cloudFrontPrivate = fs.readFileSync(privateKeyPath);
@@ -41,7 +42,6 @@ if(ENV === 'development') {
 }
 
 const postgresClient = postgresConnection(ENV);
-const app = express();
 
 AWS.config.getCredentials((err) => {
     if(err) {
@@ -59,9 +59,15 @@ const S3Client = new AWS.S3({apiVersion: '2006-03-01'});
 const SNSClient = new AWS.SNS({apiVersion: '2010-03-31'});
 const CloudFrontClient = new AWS.CloudFront.Signer(cloudfrontAccessKeyId, cloudFrontPrivateKey);
 
+const app = express();
+
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({extended:false}));
+app.use(passport.initialize());
+app.use(passport.session());
 app.use(morgan('dev'));
+
+passport.use('token-auth', tokenAuthStrategy());
 
 postgresClient
     .authenticate()

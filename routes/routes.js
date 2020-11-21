@@ -15,6 +15,7 @@ module.exports = (postgresClient, S3Client, SNSClient, CloudFront) => {
     const multer = require('multer');
     const express = require('express');
     const chalk = require('../chalk.console');
+    const passport = require('passport');
     const ControllerConstructor = require('../controllers');
 
     //Initializing Varibles
@@ -24,6 +25,22 @@ module.exports = (postgresClient, S3Client, SNSClient, CloudFront) => {
     const podcastEpisodeMultipart = multer({dest: 'tmp/podcastEpisodes/'});
     const podcastIndexController = Controller.podcastIndexController;
     const podcastEpisodeController = Controller.podcastEpisodeController;
+
+    router.use('/',
+        (req, res, next) => {
+            passport.authenticate('token-auth', (err, user) => {
+                if(!err) {
+                    res.send(err);
+                } else {
+                    if(user === 'TRANSIENT USER' || user === 'NO TOKEN FOUND' || user === 'UNKNOWN TOKEN TYPE') {
+                        res.send(`Unauthorized: ${user}`);
+                    }
+                    else {
+                        next();
+                    }
+                }
+            })(req, res, next);
+    })
     
     /**
      * 
